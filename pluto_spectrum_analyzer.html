@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADALM-PLUTO Spektrumanalyzer</title>
+<style>
+  :root {
+    --bg:       #0a0e14;
+    --surface:  #111820;
+    --panel:    #161e28;
+    --border:   #1e2d3d;
+    --accent:   #00d4ff;
+    --accent2:  #00ff88;
+    --warn:     #ffaa00;
+    --danger:   #ff4466;
+    --text:     #c8d8e8;
+    --muted:    #5a7a9a;
+    --grid:     rgba(0,180,255,0.06);
+    --font:     'JetBrains Mono', 'Fira Mono', 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .logo {
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--accent);
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .logo span { color: var(--accent2); }
+  .status-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .badge .val { color: var(--text); }
+  .badge.agc-off .val { color: var(--accent2); font-weight: bold; }
+  .badge.agc-off .dot { background: var(--accent2); }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+  .dot.live { background: var(--accent2); animation: blink 1.2s ease-in-out infinite; }
+  .dot.error { background: var(--danger); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .controls {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+  .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl-group label { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; }
+  .ctrl-group input[type=number],
+  .ctrl-group input[type=text],
+  .ctrl-group select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    width: 110px;
+    outline: none;
+  }
+  .ctrl-group input:focus, .ctrl-group select:focus {
+    border-color: var(--accent);
+  }
+  .ctrl-group input[type=range] {
+    width: 110px;
+    accent-color: var(--accent);
+  }
+  button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: background 0.15s, border-color 0.15s;
+    align-self: flex-end;
+  }
+  button:hover { background: #1a2535; border-color: var(--accent); }
+  button.primary {
+    background: rgba(0,212,255,0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 20px;
+    gap: 12px;
+  }
+
+  .chart-container {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px 8px;
+    flex: 1;
+    min-height: 320px;
+  }
+  .chart-title {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  canvas#spectrum {
+    width: 100%;
+    height: calc(100% - 28px);
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  .waterfall-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px 8px;
+    height: 140px;
+    overflow: hidden;
+    position: relative;
+  }
+  canvas#waterfall {
+    width: 100%;
+    height: calc(100% - 28px);
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  .metrics-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 100px;
+  }
+  .metric .m-label { font-size: 10px; color: var(--muted); letter-spacing: 0.4px; }
+  .metric .m-val { font-size: 16px; color: var(--text); }
+  .metric .m-val.accent { color: var(--accent); }
+  .metric .m-val.green { color: var(--accent2); }
+  .metric .m-val.warn { color: var(--warn); }
+
+  .tooltip {
+    position: absolute;
+    background: rgba(10,14,20,0.92);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 5px 9px;
+    font-size: 11px;
+    pointer-events: none;
+    display: none;
+    white-space: nowrap;
+    color: var(--accent);
+    z-index: 100;
+  }
+
+  #conn-indicator {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 4px 0;
+    min-width: 180px;
+  }
+  #error-msg {
+    color: var(--danger);
+    font-size: 11px;
+    padding: 4px 0;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">PLUTO<span>SA</span></div>
+  <div class="status-row">
+    <div class="badge agc-off">
+      <div class="dot"></div>
+      <span>AGC</span><span class="val">AUS</span>
+    </div>
+    <div class="badge" id="badge-gain">
+      <div class="dot"></div>
+      <span>GEWINN</span><span class="val" id="disp-gain">40 dB</span>
+    </div>
+    <div class="badge" id="badge-sr">
+      <div class="dot"></div>
+      <span>SAMPLINGRATE</span><span class="val" id="disp-sr">56.00 MSPS</span>
+    </div>
+    <div class="badge" id="badge-seg">
+      <div class="dot"></div>
+      <span>SEGMENTE</span><span class="val" id="disp-seg">–</span>
+    </div>
+    <div class="badge">
+      <div class="dot" id="live-dot"></div>
+      <span id="conn-indicator">Warte auf Daten …</span>
+    </div>
+  </div>
+  <div id="error-msg"></div>
+</header>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Server-URL</label>
+    <input type="text" id="server-url" value="http://localhost:8765/spectrum" style="width:200px">
+  </div>
+  <div class="ctrl-group">
+    <label>Start (MHz)</label>
+    <input type="number" id="fmin" value="100" step="1">
+  </div>
+  <div class="ctrl-group">
+    <label>Stop (MHz)</label>
+    <input type="number" id="fmax" value="2100" step="1">
+  </div>
+  <div class="ctrl-group">
+    <label>Ref. (dBFS)</label>
+    <input type="number" id="ref-level" value="0" step="5" min="-100" max="20">
+  </div>
+  <div class="ctrl-group">
+    <label>Skalierung (dB)</label>
+    <input type="number" id="scale" value="80" step="5" min="20" max="120">
+  </div>
+  <div class="ctrl-group">
+    <label>Mittelung</label>
+    <select id="avg-mode">
+      <option value="0">Aus</option>
+      <option value="3" selected>3 Sweeps</option>
+      <option value="6">6 Sweeps</option>
+      <option value="10">10 Sweeps</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>MaxHold</label>
+    <select id="maxhold">
+      <option value="0" selected>Aus</option>
+      <option value="1">An</option>
+    </select>
+  </div>
+  <button class="primary" id="btn-connect">Verbinden</button>
+  <button class="danger" id="btn-reset">Reset</button>
+</div>
+
+<div class="main">
+  <div class="metrics-row">
+    <div class="metric">
+      <span class="m-label">Peak</span>
+      <span class="m-val accent" id="m-peak">–</span>
+    </div>
+    <div class="metric">
+      <span class="m-label">Peak-Freq.</span>
+      <span class="m-val accent" id="m-peak-freq">–</span>
+    </div>
+    <div class="metric">
+      <span class="m-label">Cursor</span>
+      <span class="m-val green" id="m-cursor">–</span>
+    </div>
+    <div class="metric">
+      <span class="m-label">Cursor-Freq.</span>
+      <span class="m-val green" id="m-cursor-freq">–</span>
+    </div>
+    <div class="metric">
+      <span class="m-label">Sweep-Zeit</span>
+      <span class="m-val" id="m-sweep-time">–</span>
+    </div>
+    <div class="metric">
+      <span class="m-label">Auflösung</span>
+      <span class="m-val" id="m-res">–</span>
+    </div>
+    <div class="metric">
+      <span class="m-label">Punkte</span>
+      <span class="m-val" id="m-points">–</span>
+    </div>
+  </div>
+
+  <div class="chart-container" id="spec-container">
+    <div class="chart-title">Spektrum</div>
+    <canvas id="spectrum"></canvas>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="waterfall-container">
+    <div class="chart-title">Wasserfall</div>
+    <canvas id="waterfall"></canvas>
+  </div>
+</div>
+
+<script>
+const POLL_INTERVAL = 500;
+
+let pollTimer = null;
+let lastTimestamp = 0;
+let avgBuffer = [];
+let maxHoldData = null;
+let currentFreqs = null;
+let currentPower = null;
+let lastSweepTime = null;
+let sweepCount = 0;
+
+// ── Canvas-Setup ────────────────────────────────────────────────────────────
+
+const specCanvas  = document.getElementById('spectrum');
+const specCtx     = specCanvas.getContext('2d');
+const wfCanvas    = document.getElementById('waterfall');
+const wfCtx       = wfCanvas.getContext('2d');
+const tooltip     = document.getElementById('tooltip');
+
+function resizeCanvases() {
+  const sc = document.getElementById('spec-container');
+  const wc = document.querySelector('.waterfall-container');
+  specCanvas.width  = sc.clientWidth - 32;
+  specCanvas.height = sc.clientHeight - 40;
+  wfCanvas.width    = wc.clientWidth - 32;
+  wfCanvas.height   = wc.clientHeight - 40;
+}
+window.addEventListener('resize', () => { resizeCanvases(); redraw(); });
+resizeCanvases();
+
+// ── Farb-Palette für Wasserfall ──────────────────────────────────────────────
+
+function powerToColor(norm) {
+  // norm: 0 (schwach) … 1 (stark)
+  // Gradient: schwarz → blau → cyan → grün → gelb → rot
+  const stops = [
+    [0,   [0, 0, 20]],
+    [0.2, [0, 30, 130]],
+    [0.45,[0, 180, 220]],
+    [0.65,[0, 220, 80]],
+    [0.8, [255, 220, 0]],
+    [1.0, [255, 30, 30]],
+  ];
+  for (let i = 1; i < stops.length; i++) {
+    if (norm <= stops[i][0]) {
+      const t = (norm - stops[i-1][0]) / (stops[i][0] - stops[i-1][0]);
+      const c0 = stops[i-1][1], c1 = stops[i][1];
+      return [
+        Math.round(c0[0] + (c1[0]-c0[0]) * t),
+        Math.round(c0[1] + (c1[1]-c0[1]) * t),
+        Math.round(c0[2] + (c1[2]-c0[2]) * t),
+      ];
+    }
+  }
+  return [255, 30, 30];
+}
+
+// ── Spektrum zeichnen ────────────────────────────────────────────────────────
+
+function drawSpectrum(freqs, power) {
+  const W = specCanvas.width, H = specCanvas.height;
+  if (!W || !H || !freqs || !freqs.length) return;
+
+  const fmin = parseFloat(document.getElementById('fmin').value);
+  const fmax = parseFloat(document.getElementById('fmax').value);
+  const ref   = parseFloat(document.getElementById('ref-level').value);
+  const scale = parseFloat(document.getElementById('scale').value);
+
+  const ctx = specCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  // Hintergrund
+  ctx.fillStyle = '#0d131b';
+  ctx.fillRect(0, 0, W, H);
+
+  // Gitter
+  const MARGIN_L = 52, MARGIN_R = 10, MARGIN_T = 8, MARGIN_B = 28;
+  const plotW = W - MARGIN_L - MARGIN_R;
+  const plotH = H - MARGIN_T - MARGIN_B;
+
+  ctx.strokeStyle = '#1a2535';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+
+  // Horizontale Gitterlinien
+  const dbSteps = [0, -10, -20, -30, -40, -50, -60, -70, -80];
+  ctx.fillStyle = '#3a5060';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  for (const db of dbSteps) {
+    const y = MARGIN_T + (1 - (db + scale) / scale) * plotH;
+    if (y < MARGIN_T || y > MARGIN_T + plotH) continue;
+    ctx.beginPath();
+    ctx.moveTo(MARGIN_L, y);
+    ctx.lineTo(MARGIN_L + plotW, y);
+    ctx.stroke();
+    ctx.fillText((ref + db).toFixed(0) + ' dB', MARGIN_L - 4, y + 3);
+  }
+
+  // Vertikale Gitterlinien (Frequenz)
+  ctx.textAlign = 'center';
+  const freqRange = fmax - fmin;
+  const tickSpacingsMHz = [500, 200, 100, 50, 20, 10];
+  let tickSpacing = 100;
+  for (const s of tickSpacingsMHz) {
+    if (freqRange / s >= 3) { tickSpacing = s; break; }
+  }
+  const firstTick = Math.ceil(fmin / tickSpacing) * tickSpacing;
+  for (let f = firstTick; f <= fmax; f += tickSpacing) {
+    const x = MARGIN_L + ((f - fmin) / freqRange) * plotW;
+    ctx.beginPath();
+    ctx.moveTo(x, MARGIN_T);
+    ctx.lineTo(x, MARGIN_T + plotH);
+    ctx.stroke();
+    ctx.fillText(f + ' MHz', x, H - 6);
+  }
+
+  ctx.setLineDash([]);
+
+  // ── MaxHold ───────────────────────────────────────────────────────────────
+  if (maxHoldData && maxHoldData.length === power.length) {
+    ctx.strokeStyle = 'rgba(255, 80, 80, 0.5)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = 0; i < freqs.length; i++) {
+      const x = MARGIN_L + ((freqs[i] - fmin) / freqRange) * plotW;
+      const normP = (maxHoldData[i] - ref + scale) / scale;
+      const y = MARGIN_T + (1 - normP) * plotH;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // ── Spektrum-Linie mit Füllung ────────────────────────────────────────────
+  const grad = ctx.createLinearGradient(0, MARGIN_T, 0, MARGIN_T + plotH);
+  grad.addColorStop(0,    'rgba(0, 212, 255, 0.35)');
+  grad.addColorStop(0.4,  'rgba(0, 212, 255, 0.12)');
+  grad.addColorStop(1,    'rgba(0, 212, 255, 0.01)');
+
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < freqs.length; i++) {
+    const x = MARGIN_L + ((freqs[i] - fmin) / freqRange) * plotW;
+    const normP = (power[i] - ref + scale) / scale;
+    const y = MARGIN_T + (1 - Math.max(0, Math.min(1, normP))) * plotH;
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  // Füllung schliessen
+  const lastX = MARGIN_L + ((freqs[freqs.length-1] - fmin) / freqRange) * plotW;
+  ctx.lineTo(lastX, MARGIN_T + plotH);
+  ctx.lineTo(MARGIN_L, MARGIN_T + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Linie selbst
+  ctx.strokeStyle = '#00d4ff';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  started = false;
+  for (let i = 0; i < freqs.length; i++) {
+    const x = MARGIN_L + ((freqs[i] - fmin) / freqRange) * plotW;
+    const normP = (power[i] - ref + scale) / scale;
+    const y = MARGIN_T + (1 - Math.max(0, Math.min(1, normP))) * plotH;
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Peak markieren ────────────────────────────────────────────────────────
+  let maxP = -Infinity, maxI = 0;
+  for (let i = 0; i < power.length; i++) {
+    if (power[i] > maxP) { maxP = power[i]; maxI = i; }
+  }
+  const pkX = MARGIN_L + ((freqs[maxI] - fmin) / freqRange) * plotW;
+  const pkNorm = (maxP - ref + scale) / scale;
+  const pkY = MARGIN_T + (1 - Math.max(0, Math.min(1, pkNorm))) * plotH;
+
+  ctx.strokeStyle = '#ffaa00';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(pkX, MARGIN_T); ctx.lineTo(pkX, pkY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#ffaa00';
+  ctx.beginPath();
+  ctx.arc(pkX, pkY, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(10,14,20,0.8)';
+  ctx.fillRect(pkX + 6, pkY - 16, 95, 18);
+  ctx.fillStyle = '#ffaa00';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${freqs[maxI].toFixed(2)} MHz / ${maxP.toFixed(1)} dB`, pkX + 9, pkY - 3);
+
+  // Metriken aktualisieren
+  document.getElementById('m-peak').textContent      = maxP.toFixed(1) + ' dBFS';
+  document.getElementById('m-peak-freq').textContent = freqs[maxI].toFixed(2) + ' MHz';
+  document.getElementById('m-points').textContent    = freqs.length.toLocaleString();
+}
+
+// ── Wasserfall ───────────────────────────────────────────────────────────────
+
+function updateWaterfall(freqs, power) {
+  const W = wfCanvas.width, H = wfCanvas.height;
+  if (!W || !H) return;
+
+  const ref   = parseFloat(document.getElementById('ref-level').value);
+  const scale = parseFloat(document.getElementById('scale').value);
+  const fmin = parseFloat(document.getElementById('fmin').value);
+  const fmax = parseFloat(document.getElementById('fmax').value);
+
+  // Gesamtbild eine Zeile nach unten verschieben
+  const imgData = wfCtx.getImageData(0, 0, W, H - 1);
+  wfCtx.putImageData(imgData, 0, 1);
+
+  // Neue Zeile oben zeichnen
+  const row = wfCtx.createImageData(W, 1);
+  const d = row.data;
+  for (let px = 0; px < W; px++) {
+    const f = fmin + (px / W) * (fmax - fmin);
+    // Nächsten Datenpunkt interpolieren
+    const idx = Math.round(((f - freqs[0]) / (freqs[freqs.length-1] - freqs[0])) * (freqs.length - 1));
+    const p = (idx >= 0 && idx < power.length) ? power[idx] : ref - scale;
+    const norm = Math.max(0, Math.min(1, (p - ref + scale) / scale));
+    const [r, g, b] = powerToColor(norm);
+    d[px * 4]     = r;
+    d[px * 4 + 1] = g;
+    d[px * 4 + 2] = b;
+    d[px * 4 + 3] = 255;
+  }
+  wfCtx.putImageData(row, 0, 0);
+}
+
+// ── Daten verarbeiten ─────────────────────────────────────────────────────────
+
+function processData(data) {
+  if (!data.freqs || !data.power) return;
+
+  const freqs = data.freqs;
+  const raw   = data.power;
+  const n     = Math.min(freqs.length, raw.length);
+
+  // Mittelung
+  const avgN = parseInt(document.getElementById('avg-mode').value) || 0;
+  avgBuffer.push(raw.slice(0, n));
+  if (avgBuffer.length > Math.max(1, avgN)) avgBuffer.shift();
+
+  let power = new Array(n).fill(0);
+  for (const buf of avgBuffer) {
+    for (let i = 0; i < n; i++) power[i] += buf[i];
+  }
+  for (let i = 0; i < n; i++) power[i] /= avgBuffer.length;
+
+  // MaxHold
+  if (parseInt(document.getElementById('maxhold').value)) {
+    if (!maxHoldData || maxHoldData.length !== n) {
+      maxHoldData = power.slice();
+    } else {
+      for (let i = 0; i < n; i++) {
+        if (power[i] > maxHoldData[i]) maxHoldData[i] = power[i];
+      }
+    }
+  }
+
+  currentFreqs = freqs.slice(0, n);
+  currentPower = power;
+
+  // Sweep-Zeit
+  if (lastSweepTime !== null) {
+    const dt = (data.timestamp - lastSweepTime) * 1000;
+    document.getElementById('m-sweep-time').textContent = dt.toFixed(0) + ' ms';
+  }
+  lastSweepTime = data.timestamp;
+  sweepCount++;
+
+  // Metadaten
+  if (data.meta) {
+    document.getElementById('m-res').textContent =
+      (data.meta.res_hz / 1000).toFixed(2) + ' kHz';
+    document.getElementById('disp-gain').textContent =
+      data.meta.gain_db + ' dB';
+    document.getElementById('disp-seg').textContent =
+      data.meta.num_segments;
+    document.getElementById('disp-sr').textContent =
+      data.meta.sample_rate_msps.toFixed(2) + ' MSPS';
+  }
+
+  drawSpectrum(currentFreqs, currentPower);
+  updateWaterfall(currentFreqs, currentPower);
+}
+
+function redraw() {
+  if (currentFreqs && currentPower) {
+    drawSpectrum(currentFreqs, currentPower);
+  }
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+let isConnected = false;
+
+async function poll() {
+  const url = document.getElementById('server-url').value.trim();
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+
+    if (data.timestamp === lastTimestamp) {
+      // Kein neuer Sweep
+      scheduleNext();
+      return;
+    }
+    lastTimestamp = data.timestamp;
+
+    if (!isConnected) {
+      isConnected = true;
+      document.getElementById('live-dot').classList.add('live');
+      document.getElementById('conn-indicator').textContent = 'Verbunden – live';
+      document.getElementById('error-msg').style.display = 'none';
+    }
+
+    processData(data);
+  } catch(e) {
+    isConnected = false;
+    document.getElementById('live-dot').classList.remove('live');
+    document.getElementById('live-dot').classList.add('error');
+    document.getElementById('conn-indicator').textContent = 'Keine Verbindung';
+    document.getElementById('error-msg').style.display = 'block';
+    document.getElementById('error-msg').textContent = 'Fehler: ' + e.message;
+  }
+  scheduleNext();
+}
+
+function scheduleNext() {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, POLL_INTERVAL);
+}
+
+function startPolling() {
+  if (pollTimer) clearTimeout(pollTimer);
+  poll();
+}
+
+function stopPolling() {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  isConnected = false;
+  document.getElementById('live-dot').classList.remove('live', 'error');
+  document.getElementById('conn-indicator').textContent = 'Getrennt';
+}
+
+document.getElementById('btn-connect').addEventListener('click', () => {
+  if (pollTimer) {
+    stopPolling();
+    document.getElementById('btn-connect').textContent = 'Verbinden';
+  } else {
+    startPolling();
+    document.getElementById('btn-connect').textContent = 'Trennen';
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  maxHoldData  = null;
+  avgBuffer    = [];
+  currentFreqs = null;
+  currentPower = null;
+  sweepCount   = 0;
+  specCtx.clearRect(0, 0, specCanvas.width, specCanvas.height);
+  wfCtx.clearRect(0, 0, wfCanvas.width, wfCanvas.height);
+  document.querySelectorAll('.m-val').forEach(el => el.textContent = '–');
+});
+
+// ── Cursor / Tooltip ──────────────────────────────────────────────────────────
+
+specCanvas.addEventListener('mousemove', (e) => {
+  if (!currentFreqs) return;
+  const rect = specCanvas.getBoundingClientRect();
+  const xPx  = e.clientX - rect.left;
+  const W    = specCanvas.width;
+
+  const MARGIN_L = 52;
+  const plotW = W - MARGIN_L - 10;
+
+  const fmin = parseFloat(document.getElementById('fmin').value);
+  const fmax = parseFloat(document.getElementById('fmax').value);
+  const pct  = Math.max(0, Math.min(1, (xPx - MARGIN_L) / plotW));
+  const fCursor = fmin + pct * (fmax - fmin);
+
+  // Nächsten Messpunkt finden
+  const idx = currentFreqs.findIndex(f => f >= fCursor);
+  if (idx < 0) return;
+
+  const fVal = currentFreqs[idx].toFixed(2);
+  const pVal = currentPower[idx].toFixed(1);
+
+  document.getElementById('m-cursor').textContent      = pVal + ' dBFS';
+  document.getElementById('m-cursor-freq').textContent = fVal + ' MHz';
+
+  tooltip.style.display = 'block';
+  tooltip.style.left    = (e.clientX - rect.left + 14) + 'px';
+  tooltip.style.top     = (e.clientY - rect.top  - 14) + 'px';
+  tooltip.textContent   = `${fVal} MHz  |  ${pVal} dBFS`;
+});
+
+specCanvas.addEventListener('mouseleave', () => {
+  tooltip.style.display = 'none';
+});
+
+// Controls: Neuzeichnen bei Änderung
+['ref-level', 'scale', 'fmin', 'fmax'].forEach(id => {
+  document.getElementById(id).addEventListener('input', redraw);
+});
+</script>
+</body>
+</html>
